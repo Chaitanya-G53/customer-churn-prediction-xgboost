@@ -1,13 +1,18 @@
+````
 # 📊 Customer Churn Prediction using XGBoost
 
-An end-to-end Machine Learning project that predicts whether a bank customer is likely to churn using an **XGBoost classification model**.
+An end-to-end Machine Learning project that predicts whether a bank customer is likely to churn using an **XGBoost Classifier** and an interactive **Streamlit dashboard**.
 
-The project covers the complete Machine Learning workflow — from exploratory data analysis and preprocessing to model evaluation, feature importance, model persistence, and deployment through an interactive **Streamlit dashboard**.
+The project covers data exploration, preprocessing, categorical encoding, model training, evaluation, feature importance, model serialization, and deployment.
+
+---
 
 ## 🚀 Live Demo
 
 🌐 **Streamlit Application:**  
 https://customer-churn-prediction-xgboost-ynnb4pspfafhcyzrewhl6k.streamlit.app/
+
+---
 
 ## 📌 Project Overview
 
@@ -15,18 +20,16 @@ Customer churn is an important business problem for banks and financial institut
 
 The objective of this project is to predict whether a customer is likely to leave the bank based on demographic, financial, and account-related information.
 
-The trained XGBoost model is combined with a Scikit-learn preprocessing pipeline and deployed as an interactive Streamlit application.
-
-### End-to-End Workflow
+The project follows an end-to-end Machine Learning workflow:
 
 ```
 Customer Dataset
        ↓
-Exploratory Data Analysis
+Data Exploration
        ↓
 Data Preprocessing
        ↓
-One-Hot Encoding
+Categorical Encoding
        ↓
 Train/Test Split
        ↓
@@ -42,6 +45,9 @@ Streamlit Deployment
        ↓
 Churn Prediction
 ````
+
+---
+
 ## 🎯 Objective
 
 The model performs binary classification:
@@ -51,18 +57,24 @@ The model performs binary classification:
 | `0`        | Customer likely to stay  |
 | `1`        | Customer likely to churn |
 
-The application also calculates the predicted churn probability and displays a corresponding risk level.
+The Streamlit application accepts customer information and generates a churn prediction, probability, and risk assessment.
+
+---
 
 ## 📊 Dataset
 
-The project uses a bank customer churn dataset containing:
+The project uses the **Bank Customer Churn Prediction** dataset.
+
+### Dataset Summary
 
 * **10,000 customer records**
-* **12 columns**
+* **12 original columns**
 * Numerical and categorical features
-* `churn` as the target variable
+* Binary `churn` target variable
 
-The dataset contains customer demographic, financial, and account-related information.
+The dataset contains demographic, financial, and account-related customer information.
+
+---
 
 ## 🧾 Features
 
@@ -83,54 +95,82 @@ The dataset contains customer demographic, financial, and account-related inform
 
 `customer_id` is excluded from model training because it is an identifier rather than a predictive feature.
 
+---
+
 ## 🔍 Exploratory Data Analysis
 
-The notebook performs exploratory analysis to understand the dataset and identify patterns related to customer churn.
+The notebook includes exploratory analysis to understand the dataset and identify patterns associated with customer churn.
 
 The analysis includes:
 
-* Dataset structure and data types
+* Dataset structure
+* Data types
 * Missing-value analysis
 * Duplicate-value analysis
 * Statistical summaries
-* Churn distribution
-* Country-wise churn analysis
-* Age distribution
-* Active membership and churn analysis
-* Customer feature relationships
+* Customer churn distribution
+* Churn by country
+* Age vs churn
+* Active membership vs churn
+
+---
 
 ## 🧹 Data Preprocessing
 
-The project uses a Scikit-learn preprocessing pipeline.
+Categorical variables are converted into numerical features using Pandas `get_dummies()`.
 
-Categorical variables such as:
-
-* `country`
-* `gender`
-
-are transformed using:
-
-```python
-OneHotEncoder(handle_unknown="ignore")
+```
+ch = pd.get_dummies(
+    ch,
+    columns=['country', 'gender'],
+    dtype=int
+)
 ```
 
-A `ColumnTransformer` is used to apply the appropriate preprocessing to categorical features while passing numerical features through.
+This creates binary features:
 
-The preprocessing stage and XGBoost model are combined into a single Scikit-learn `Pipeline`.
-
-```text
-Input Data
-    ↓
-ColumnTransformer
-    ↓
-OneHotEncoder
-    ↓
-XGBoost Classifier
-    ↓
-Prediction
+```
+country_France
+country_Germany
+country_Spain
+gender_Female
+gender_Male
 ```
 
-This ensures that the same preprocessing logic is automatically applied during both training and prediction.
+The customer ID and target variable are then removed from the model inputs:
+
+```
+x = ch.drop(
+    columns=['customer_id', 'churn']
+)
+
+y = ch['churn']
+```
+
+The final model uses **13 input features**.
+
+---
+
+## ✂️ Train/Test Split
+
+The dataset is divided into training and testing sets using an **80/20 stratified split**.
+
+```
+x_train, x_test, y_train, y_test = train_test_split(
+    x,
+    y,
+    random_state=43,
+    test_size=0.2,
+    stratify=y
+)
+```
+
+This produces:
+
+* **8,000 training records**
+* **2,000 testing records**
+
+---
 
 ## 🤖 Machine Learning Model
 
@@ -138,95 +178,78 @@ This ensures that the same preprocessing logic is automatically applied during b
 
 The project uses **XGBoost** for binary customer churn classification.
 
-Current model configuration:
+The model was trained using:
 
-```python
+```
 XGBClassifier(
-    n_estimators=250,
-    learning_rate=0.05,
-    max_depth=5,
-    random_state=42,
-    eval_metric="logloss"
+    n_estimators=400
 )
 ```
 
 ### Why XGBoost?
 
-XGBoost was selected because it is a powerful gradient-boosting algorithm that performs well on structured/tabular datasets and classification problems.
+XGBoost is a gradient-boosting algorithm that performs well on structured and tabular datasets.
+
+It was selected for this project because customer churn prediction is a structured classification problem involving numerical and encoded categorical features.
+
+---
 
 ## 📈 Model Performance
 
-The model was evaluated on a held-out test set.
+The model was evaluated on the **2,000-record test set**.
 
 | Metric                |      Score |
 | --------------------- | ---------: |
-| **Accuracy**          | **86.55%** |
-| **ROC-AUC**           | **86.41%** |
-| **Precision — Churn** |    **78%** |
-| **Recall — Churn**    |    **48%** |
-| **F1-Score — Churn**  |    **59%** |
+| **Accuracy**          | **85.35%** |
+| **Precision — Stay**  |    **89%** |
+| **Recall — Stay**     |    **93%** |
+| **F1-Score — Stay**   |    **91%** |
+| **Precision — Churn** |    **68%** |
+| **Recall — Churn**    |    **54%** |
+| **F1-Score — Churn**  |    **60%** |
 
 ### Classification Report
 
 ```
-              precision    recall  f1-score
+              precision    recall  f1-score   support
 
-0                0.88       0.96      0.92
-1                0.78       0.48      0.59
+           0       0.89      0.93      0.91      1593
+           1       0.68      0.54      0.60       407
 
-Accuracy                         0.87
+    accuracy                           0.85      2000
+   macro avg       0.78      0.74      0.75      2000
+weighted avg       0.84      0.85      0.85      2000
 ```
 
-### Important Observation
+### Model Observation
 
-The model achieves good overall classification performance and an ROC-AUC of **0.8641**.
+The model achieves **85.35% accuracy**.
 
-However, the recall for the churn class is **48%**, meaning that a significant number of actual churn customers are still missed.
+However, the recall for the churn class is **54%**, meaning that the model does not identify every customer who actually churns.
 
-This highlights an important limitation of the current model and provides a clear direction for future improvement.
+For a real-world churn prediction system, improving churn recall would be an important next step.
 
-## 🔲 Confusion Matrix
+This is why accuracy alone should not be used to judge the quality of a churn prediction model.
 
-The final model produced the following confusion matrix:
-
-```
-                 Predicted
-                 Stay   Churn
-
-Actual Stay      1537    56
-Actual Churn      213   194
-```
-
-### Interpretation
-
-* **1537** customers were correctly predicted as staying.
-* **56** customers were incorrectly classified as churn.
-* **213** actual churn customers were missed by the model.
-* **194** churn customers were correctly identified.
-
-The false negatives are particularly important in a churn prediction problem because these represent customers who actually churned but were not identified by the model.
-
-![Confusion Matrix](assets/confusion_matrix.png)
+---
 
 ## 🔍 Feature Importance
 
-XGBoost feature importance is extracted from the trained model after preprocessing.
-
-The feature-importance analysis helps identify which transformed features contribute most to the model.
+The project uses XGBoost feature importance to analyze which input features contribute most strongly to the model.
 
 ![Feature Importance](assets/feature_importance.png)
 
+---
+
 ## 🖥️ Streamlit Application
 
-The trained Machine Learning pipeline is deployed through an interactive Streamlit dashboard called:
-
-### Customer Churn Intelligence Dashboard
-
-The application allows users to enter customer information and receive a churn prediction.
+The trained XGBoost model is integrated into an interactive Streamlit dashboard.
 
 ### Customer Inputs
 
-* Country / Geography
+Users can enter:
+
+* Country
 * Gender
 * Age
 * Credit Score
@@ -246,53 +269,20 @@ The dashboard displays:
 * Churn probability
 * Risk level
 * Probability gauge
-* Customer feature profile
-* Model information
+* Customer profile summary
+* Key risk indicators
+
+---
 
 ## 📸 Application Preview
 
-![Customer Churn Dashboard](assets/dashboard.png)
+![Customer Churn Intelligence Dashboard](assets/dashboard.png)
 
-## 📊 Dashboard Features
+---
 
-### Model Engine
+## 📊 Risk Assessment
 
-```
-XGBoost Classifier
-```
-
-### Model Performance
-
-```
-ROC-AUC: 86.41%
-```
-
-### Decision Threshold
-
-```
-50%
-```
-
-### Prediction Overview
-
-The application displays:
-
-* Likely to Stay / Likely to Churn
-* Retention Probability
-* Churn Probability
-* Risk Level
-
-### Probability Gauge
-
-A visual gauge represents the predicted churn probability.
-
-### Customer Feature Profile
-
-The application displays the feature values submitted to the ML pipeline.
-
-## ⚠️ Risk Level
-
-The dashboard categorizes churn probability into three levels:
+The application categorizes the predicted churn probability into three risk levels:
 
 | Churn Probability | Risk Level |
 | ----------------: | ---------- |
@@ -300,26 +290,41 @@ The dashboard categorizes churn probability into three levels:
 |         30% – 60% | Medium     |
 |        60% – 100% | High       |
 
-These risk categories are application-level thresholds used to make the model output easier to interpret.
+These thresholds are application-level rules used to make the prediction easier to interpret.
 
-They are **not directly produced by XGBoost**.
+They are not directly generated by XGBoost.
 
+---
+
+## 🧠 Key Risk Indicators
+
+The dashboard provides customer-level indicators such as:
+
+* Active membership status
+* Age
+* Number of products
+
+These indicators are presented as contextual risk information.
+
+They should not be interpreted as formal causal explanations of the individual XGBoost prediction.
+
+---
 
 ## 🛠️ Technology Stack
 
-### Programming
+### Programming Language
 
 * Python
+
+### Machine Learning
+
+* XGBoost
+* Scikit-learn
 
 ### Data Processing
 
 * Pandas
 * NumPy
-
-### Machine Learning
-
-* Scikit-learn
-* XGBoost
 
 ### Visualization
 
@@ -330,16 +335,18 @@ They are **not directly produced by XGBoost**.
 
 * Streamlit
 
-### Model Persistence
+### Model Serialization
 
 * Pickle
 
-### Development
+### Development Tools
 
 * Jupyter Notebook
 * Google Colab
 * Git
 * GitHub
+
+---
 
 ## 📁 Project Structure
 
@@ -348,84 +355,121 @@ customer-churn-prediction-xgboost/
 │
 ├── assets/
 │   ├── dashboard.png
-│   ├── confusion_matrix.png
 │   └── feature_importance.png
 │
-├── Customer_Churn.ipynb
+├── CustomerChrun_XGBoost.ipynb
 ├── app.py
-├── customer_churn_xgboost_pipeline.pkl
+├── Customer-Churn-Prediction-XGBOOST.pkl
 ├── requirements.txt
 ├── README.md
-└── .gitignore
+├── .gitignore
+└── LICENSE
 ```
+
+---
 
 ## ⚙️ Installation
 
 Clone the repository:
 
 ```
-git clone https://github.com/YOUR_USERNAME/customer-churn-prediction-xgboost.git
+git clone https://github.com/Chaitanya-G53/customer-churn-prediction-xgboost.git
 ```
 
-Navigate to the project directory:
+Navigate to the project:
 
 ```
 cd customer-churn-prediction-xgboost
 ```
 
-Install the dependencies:
+Install the required dependencies:
 
 ```
 pip install -r requirements.txt
 ```
 
+---
+
 ## ▶️ Run Locally
 
 Start the Streamlit application:
 
-```
+``` 
 streamlit run app.py
 ```
 
 The application will open in your browser.
 
-## 🧪 Model Development Workflow
+---
+
+## 🧪 Machine Learning Workflow
 
 The Colab Notebook contains the complete model development process:
 
-1. Import required libraries
-2. Load the dataset
-3. Inspect dataset structure
-4. Check data types
+1. Import libraries
+2. Download the dataset
+3. Load the dataset
+4. Inspect dataset structure
 5. Check missing values
 6. Check duplicate records
-7. Perform exploratory data analysis
-8. Analyze churn distribution
-9. Analyze customer characteristics
+7. Generate statistical summaries
+8. Perform exploratory data analysis
+9. Encode categorical variables
 10. Separate features and target
 11. Remove customer identifier
 12. Split data into training and testing sets
-13. Apply categorical preprocessing
-14. Train XGBoost
-15. Generate predictions
-16. Generate prediction probabilities
-17. Evaluate classification performance
-18. Generate confusion matrix
-19. Calculate ROC-AUC
-20. Analyze feature importance
-21. Save the trained pipeline
+13. Train XGBoost
+14. Generate predictions
+15. Generate classification report
+16. Calculate accuracy
+17. Analyze model performance
+18. Save the trained model
 
-## 💾 Model Persistence
+---
 
-The complete preprocessing and model pipeline is saved as:
+## 💾 Model File
+
+The trained model is stored as:
 
 ```
-customer_churn_xgboost_pipeline.pkl
+Customer-Churn-Prediction-XGBOOST.pkl
 ```
 
-Saving the complete pipeline ensures that preprocessing and prediction use the same transformations.
+The saved file contains the trained **XGBClassifier**.
 
-The deployment environment should use compatible versions of the libraries used when the model was trained.
+The preprocessing step is performed separately using the same categorical encoding logic used during model training.
+
+Therefore, the input data supplied to the saved model must contain the same feature structure and column order used during training.
+
+### Model Input Features
+
+```
+credit_score
+age
+tenure
+balance
+products_number
+credit_card
+active_member
+estimated_salary
+country_France
+country_Germany
+country_Spain
+gender_Female
+gender_Male
+```
+
+---
+
+## ⚠️ Model Compatibility
+
+The serialized model should be loaded using compatible Python and XGBoost environments.
+
+When deploying the model, use the package versions specified in `requirements.txt`.
+
+For production systems, saving the model using XGBoost's native model format can provide better portability than Python pickle serialization.
+
+---
 
 ## 🚀 Future Improvements
 
@@ -435,71 +479,66 @@ The deployment environment should use compatible versions of the libraries used 
 * Cross-validation
 * Class-imbalance handling
 * Classification threshold optimization
-* Probability calibration
 * Improving churn recall
+* Probability calibration
+* Model comparison
 
-* SHAP-based local explanations
-* Global feature importance visualization
+### Explainability
+
+* SHAP-based explanations
 * Individual prediction explanations
+* Global model interpretation
 
 ### Deployment
 
 * Model monitoring
 * Prediction logging
 * Data drift detection
-* Automated model retraining
-
-
-### Explainability
-### Model Comparison
-
-Compare XGBoost against:
-
-* Logistic Regression
-* Random Forest
-* AdaBoost
-* Other gradient-boosting models
+---
 
 ## 💡 Key Learning Outcomes
 
-This project provided hands-on experience with an end-to-end Machine Learning workflow:
+Through this project, I gained hands-on experience with:
 
 * Exploratory Data Analysis
-* Data cleaning and validation
-* Feature preprocessing
-* One-Hot Encoding
-* ColumnTransformer
-* Scikit-learn Pipelines
+* Data preprocessing
+* Categorical feature encoding
+* Train/test splitting
 * XGBoost classification
 * Classification metrics
-* Confusion matrix
-* ROC-AUC
+* Precision and recall analysis
 * Feature importance
 * Model serialization
 * Streamlit application development
-* ML model deployment
+* Machine Learning deployment
+
+---
 
 ## 📌 Key Takeaway
 
-Building a Machine Learning model is only one part of an ML workflow.
+This project demonstrates that a Machine Learning project is more than simply training a model.
 
-A complete ML application also requires:
+The complete workflow is:
 
 ```
 Data
  ↓
+Exploration
+ ↓
 Preprocessing
  ↓
-Model
+Model Training
  ↓
 Evaluation
  ↓
-Interpretation
+Prediction
  ↓
 Deployment
 ```
 
-The current model provides a strong baseline with **86.55% accuracy and 86.41% ROC-AUC**, while the lower churn recall highlights a real area for further model improvement.
+The current model achieves **85.35% accuracy**, while the **54% recall for the churn class** highlights an important opportunity for future improvement.
+
+---
 
 ## 👨‍💻 Author
 
@@ -507,10 +546,12 @@ The current model provides a strong baseline with **86.55% accuracy and 86.41% R
 
 **Aspiring Data Scientist | Python | SQL | Machine Learning**
 
-📍 Bhandara, Maharashtra
+📍 Maharashtra, India
 
-🔗 GitHub: [Chaitanya-G53](https://github.com/Chaitanya-G53)
+🔗 GitHub:
+[https://github.com/Chaitanya-G53](https://github.com/Chaitanya-G53)
 
+---
 
 ## ⭐ Support
 
