@@ -1,94 +1,93 @@
 import os
 import pickle
 import numpy as np
-from flask import Flask, jsonify, request
-from pydantic import BaseModel, Field, ValidationError
+import streamlit as st
 
-app = Flask(__name__)
+st.set_page_config(page_title="Customer Churn Prediction", layout="centered")
 
-# Model path config
 MODEL_PATH = os.environ.get("MODEL_PATH", "model.pkl")
 
-# Load XGBoost Classifier Model
-try:
-    with open(MODEL_PATH, "rb") as f:
-        model = pickle.load(f)
-    print(f"Successfully loaded model from {MODEL_PATH}")
-except Exception as e:
-    model = None
-    print(f"Warning: Could not load model from {MODEL_PATH}. Error: {e}")
 
-
-# Input Schema Validation matching the 13 model features
-class CustomerData(BaseModel):
-    credit_score: int = Field(..., example=600)
-    age: int = Field(..., example=40)
-    tenure: int = Field(..., example=3)
-    balance: float = Field(..., example=60000.0)
-    products_number: int = Field(..., example=2)
-    credit_card: int = Field(..., example=1)
-    active_member: int = Field(..., example=1)
-    estimated_salary: float = Field(..., example=50000.0)
-    country_France: int = Field(..., example=1)
-    country_Germany: int = Field(..., example=0)
-    country_Spain: int = Field(..., example=0)
-    gender_Female: int = Field(..., example=0)
-    gender_Male: int = Field(..., example=1)
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({"status": "healthy", "model_loaded": model is not None}), 200
-
-
-@app.route("/predict", methods=["POST"])
-def predict():
-    if model is None:
-        return jsonify({"error": "Model not loaded"}), 500
-
-    json_data = request.get_json(silent=True)
-    if not json_data:
-        return jsonify({"error": "Invalid or missing JSON payload"}), 400
-
+@st.cache_resource
+def load_model():
     try:
-        # Validate JSON payload against expected fields
-        validated_data = CustomerData(**json_data)
-    except ValidationError as err:
-        return jsonify({"error": "Validation error", "details": err.errors()}), 422
-
-    # Map inputs to the exact feature order expected by the model
-    features = [
-        validated_data.credit_score,
-        validated_data.age,
-        validated_data.tenure,
-        validated_data.balance,
-        validated_data.products_number,
-        validated_data.credit_card,
-        validated_data.active_member,
-        validated_data.estimated_salary,
-        validated_data.country_France,
-        validated_data.country_Germany,
-        validated_data.country_Spain,
-        validated_data.gender_Female,
-        validated_data.gender_Male,
-    ]
-
-    input_array = np.array([features])
-
-    # Run inference
-    probability = float(model.predict_proba(input_array)[0][1])
-    prediction = int(model.predict(input_array)[0])
-
-    return (
-        jsonify(
-            {
-                "prediction": prediction,
-                "probability": round(probability, 4),
-            }
-        ),
-        200,
-    )
+        with open(MODEL_PATH, "rb") as f:
+            return pickle.load(f)
+    except Exception as e:
+        st.error(f"Error loading model from {MODEL_PATH}: {e}")
+        return None
 
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+model = load_model()
+
+st.title("Customer Churn Prediction")
+st.write("Enter customer metrics below to evaluate churn probability.")
+
+with st.form("churn_form"):
+    col1, col2 = st.columns(2)
+
+    with col1:
+        credit_score = st.number_input(
+            "Credit Score", min_value=300, max_value=850, value=600
+        )
+        age = st.number_input("Age", min_value=18, max_value=100, value=40)
+        tenure = st.number_input("Tenure (Years)", min_value=0, max_value=10, value=3)
+        balance = st.number_input("Balance", min_value=0.0, value=60000.0)
+        products_number = st.selectbox("Number of Products", [1, 2, 3, 4], index=1)
+        credit_card = st.selectbox(
+            "Has Credit Card?", [0, 1], format_func=lambda x: "Yes" if x == 1 else "No"
+        )
+
+    with col2:
+        active_member = st.selectbox(
+            "Is Active Member?", [0, 1], format_func=lambda x: "Yes" if x == 1 else "No"
+        )
+        estimated_salary = st.number_input(
+            "Estimated Salary", min_value=0.0, value=50000.0
+        )
+        country = st.selectbox("Country", ["France", "Germany", "Spain"])
+        gender = st.selectbox("Gender", ["Female", "Male"])
+
+    submit_button = st.form_submit_button("Predict Churn")
+
+if submit_button:
+    if model is None:
+        st.error("Model file not found. Ensure `model.pkl` is in your repository root.")
+    else:
+        # Encode categorical variables to match training feature structure
+        country_France = 1 if country == "France" else 0
+        country_Germany = 1 if country == "Germany" else 0
+        country_Spain = 1 if country == "Spain" else 0
+
+        gender_Female = 1 if gender == "Female" else 0
+        gender_Male = 1 if gender == "Male" else 0
+
+        # Feature order matching the trained XGBoost model
+        features = np.array(
+            [
+                [
+                    credit_score,
+                    age,
+                    tenure,
+                    balance,
+                    products_number,
+                    credit_card,
+                    active_member,
+                    estimated_salary,
+                    country_France,
+                    country_Germany,
+                    country_Spain,
+                    gender_Female,
+                    gender_Male,
+                ]
+            ]
+        )
+
+        probability = float(model.predict_proba(features)[0][1])
+        prediction = int(model.predict(features)[0])
+
+        st.divider()
+        if prediction == 1:
+            st.error(f"**High Churn Risk** (Probability: {probability:.2%})")
+        else:
+            st.success(f"**Low Churn Risk** (Probability: {probability:.2%})")
