@@ -1,7 +1,4 @@
-streamlit
-xgboost 
-scikit-learn 
-numpy 
-pandas 
-plotly
-shap
+xgboost
+flask
+numpy
+pydantic
