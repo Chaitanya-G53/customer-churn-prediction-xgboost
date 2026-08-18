@@ -1,4 +1,4 @@
-````
+
 # 📊 Customer Churn Prediction using XGBoost
 
 An end-to-end Machine Learning project that predicts whether a bank customer is likely to churn using an **XGBoost Classifier** and an interactive **Streamlit dashboard**.
