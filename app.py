@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 # -----------------------------------------------------------------------------
-# Configuration & Styling
+# Configuration & Dark Theme Styling
 # -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="Customer Churn Intelligence",
@@ -15,35 +15,47 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Modern, clean CSS styling
+# Dark Theme Custom CSS
 st.markdown("""
 <style>
-    /* Global Base */
+    /* Main Canvas Background */
     .stApp {
-        background-color: #F8FAFC;
+        background-color: #0F172A;
+        color: #F8FAFC;
     }
     
-    /* Headers & Text */
-    h1, h2, h3 {
-        color: #0F172A;
+    /* Sidebar Background & Text */
+    [data-testid="stSidebar"] {
+        background-color: #1E293B;
+        border-right: 1px solid #334155;
+    }
+    [data-testid="stSidebar"] * {
+        color: #E2E8F0 !important;
+    }
+
+    /* Headers & Typography */
+    h1, h2, h3, h4 {
+        color: #F8FAFC !important;
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 700;
     }
     
-    /* Custom Card Containers */
+    /* Dark Theme Card Containers */
     .metric-card {
-        background: #FFFFFF;
-        border: 1px solid #E2E8F0;
+        background: #1E293B;
+        border: 1px solid #334155;
         border-radius: 12px;
         padding: 24px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
         margin-bottom: 20px;
     }
     
+    /* Status Badges */
     .status-badge-stay {
-        background-color: #DCFCE7;
-        color: #15803D;
-        padding: 6px 16px;
+        background-color: rgba(34, 197, 94, 0.15);
+        color: #4ADE80;
+        border: 1px solid rgba(74, 222, 128, 0.3);
+        padding: 8px 18px;
         border-radius: 20px;
         font-weight: 600;
         font-size: 0.95rem;
@@ -51,20 +63,33 @@ st.markdown("""
     }
     
     .status-badge-churn {
-        background-color: #FEE2E2;
-        color: #B91C1C;
-        padding: 6px 16px;
+        background-color: rgba(239, 68, 68, 0.15);
+        color: #F87171;
+        border: 1px solid rgba(248, 113, 113, 0.3);
+        padding: 8px 18px;
         border-radius: 20px;
         font-weight: 600;
         font-size: 0.95rem;
         display: inline-block;
     }
     
+    /* Input Control Overrides */
+    div[data-baseweb="input"] {
+        background-color: #0F172A !important;
+        color: #F8FAFC !important;
+        border-color: #334155 !important;
+    }
+    div[data-baseweb="select"] > div {
+        background-color: #0F172A !important;
+        color: #F8FAFC !important;
+        border-color: #334155 !important;
+    }
+    
     /* Button Styling */
     .stButton>button {
-        background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
-        color: white;
-        border: None;
+        background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+        color: #FFFFFF;
+        border: none;
         border-radius: 8px;
         padding: 12px 24px;
         font-weight: 600;
@@ -72,13 +97,13 @@ st.markdown("""
         transition: all 0.2s ease;
     }
     .stButton>button:hover {
-        background: linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%);
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+        background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+        box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
     }
 </style>
 """, unsafe_allow_html=True)
 
-MODEL_PATH = "customer_churn_xgboost_pipeline.pkl"
+MODEL_PATH = "model.pkl"
 
 # -----------------------------------------------------------------------------
 # Model Loader
@@ -136,7 +161,6 @@ input_df = pd.DataFrame([{
     "estimated_salary": estimated_salary
 }])
 
-# Compute prediction
 try:
     probabilities = model.predict_proba(input_df)[0]
     stay_prob = probabilities[0]
@@ -157,11 +181,11 @@ with col1:
     
     if prediction == 1:
         st.markdown('<div class="status-badge-churn">⚠️ High Risk of Churn</div>', unsafe_allow_html=True)
-        st.markdown(f"### Probability of Churn: **{churn_prob * 100:.1f}%**")
+        st.markdown(f"### Probability of Churn: <span style='color:#F87171;'>{churn_prob * 100:.1f}%</span>", unsafe_allow_html=True)
         st.write("This customer exhibits characteristics typically associated with account closure.")
     else:
         st.markdown('<div class="status-badge-stay">✅ Customer Likely to Stay</div>', unsafe_allow_html=True)
-        st.markdown(f"### Retention Probability: **{stay_prob * 100:.1f}%**")
+        st.markdown(f"### Retention Probability: <span style='color:#4ADE80;'>{stay_prob * 100:.1f}%</span>", unsafe_allow_html=True)
         st.write("This customer exhibits healthy engagement metrics.")
         
     st.markdown("---")
@@ -188,23 +212,23 @@ with col2:
     st.markdown('<div class="metric-card">', unsafe_allow_html=True)
     st.subheader("Probability Distribution")
     
-    # Gauge Chart for Probability
+    # Dark Mode Gauge Chart
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=churn_prob * 100,
-        number={'suffix': "%", 'font': {'size': 36}},
+        number={'suffix': "%", 'font': {'size': 36, 'color': '#F8FAFC'}},
         gauge={
-            'axis': {'range': [0, 100], 'tickwidth': 1},
+            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#94A3B8"},
             'bar': {'color': "#EF4444" if churn_prob >= 0.5 else "#22C55E"},
-            'bgcolor': "#F1F5F9",
+            'bgcolor': "#0F172A",
             'borderwidth': 0,
             'steps': [
-                {'range': [0, 30], 'color': '#DCFCE7'},
-                {'range': [30, 60], 'color': '#FEF9C3'},
-                {'range': [60, 100], 'color': '#FEE2E2'}
+                {'range': [0, 30], 'color': 'rgba(34, 197, 94, 0.2)'},
+                {'range': [30, 60], 'color': 'rgba(234, 179, 8, 0.2)'},
+                {'range': [60, 100], 'color': 'rgba(239, 68, 68, 0.2)'}
             ],
             'threshold': {
-                'line': {'color': "black", 'width': 3},
+                'line': {'color': "#F8FAFC", 'width': 3},
                 'thickness': 0.75,
                 'value': 50
             }
