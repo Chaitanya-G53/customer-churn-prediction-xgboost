@@ -78,7 +78,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-MODEL_PATH = "model.pkl"
+MODEL_PATH = "customer_churn_xgboost_pipeline.pkl"
 
 # -----------------------------------------------------------------------------
 # Model Loader
