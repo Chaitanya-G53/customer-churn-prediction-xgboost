@@ -1,3 +1,7 @@
 streamlit
+flask
 xgboost
+scikit-learn
+pandas
 numpy
+requests
