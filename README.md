@@ -438,8 +438,6 @@ The deployment environment should use compatible versions of the libraries used 
 * Probability calibration
 * Improving churn recall
 
-### Explainability
-
 * SHAP-based local explanations
 * Global feature importance visualization
 * Individual prediction explanations
@@ -451,6 +449,8 @@ The deployment environment should use compatible versions of the libraries used 
 * Data drift detection
 * Automated model retraining
 
+
+### Explainability
 ### Model Comparison
 
 Compare XGBoost against:
