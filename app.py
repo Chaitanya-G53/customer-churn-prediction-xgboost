@@ -1,340 +1,94 @@
 import os
 import pickle
 import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
-import streamlit as st
-import shap
+from flask import Flask, jsonify, request
+from pydantic import BaseModel, Field, ValidationError
 
-# -----------------------------------------------------------------------------
-# 1. Page Configuration & Dark Theme Styling
-# -----------------------------------------------------------------------------
-st.set_page_config(
-    page_title="Customer Churn Intelligence",
-    page_icon="🔮",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+app = Flask(__name__)
 
-st.markdown("""
-<style>
-    /* Main Canvas Background */
-    .stApp {
-        background-color: #0F172A;
-        color: #F8FAFC;
-    }
-    
-    /* Sidebar Styling */
-    [data-testid="stSidebar"] {
-        background-color: #1E293B;
-        border-right: 1px solid #334155;
-    }
-    [data-testid="stSidebar"] * {
-        color: #E2E8F0 !important;
-    }
+# Model path config
+MODEL_PATH = os.environ.get("MODEL_PATH", "model.pkl")
 
-    /* Headers & Typography */
-    h1, h2, h3, h4 {
-        color: #F8FAFC !important;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        font-weight: 700;
-    }
-    
-    /* Dark Theme Card Containers */
-    .metric-card {
-        background: #1E293B;
-        border: 1px solid #334155;
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
-    }
-    
-    /* Status Badges */
-    .status-badge-stay {
-        background-color: rgba(34, 197, 94, 0.15);
-        color: #4ADE80;
-        border: 1px solid rgba(74, 222, 128, 0.3);
-        padding: 6px 16px;
-        border-radius: 20px;
-        font-weight: 600;
-        font-size: 0.9rem;
-        display: inline-block;
-    }
-    
-    .status-badge-churn {
-        background-color: rgba(239, 68, 68, 0.15);
-        color: #F87171;
-        border: 1px solid rgba(248, 113, 113, 0.3);
-        padding: 6px 16px;
-        border-radius: 20px;
-        font-weight: 600;
-        font-size: 0.9rem;
-        display: inline-block;
-    }
+# Load XGBoost Classifier Model
+try:
+    with open(MODEL_PATH, "rb") as f:
+        model = pickle.load(f)
+    print(f"Successfully loaded model from {MODEL_PATH}")
+except Exception as e:
+    model = None
+    print(f"Warning: Could not load model from {MODEL_PATH}. Error: {e}")
 
-    /* Risk Level Indicators */
-    .risk-low { color: #4ADE80; font-weight: 700; }
-    .risk-med { color: #FACC15; font-weight: 700; }
-    .risk-high { color: #F87171; font-weight: 700; }
 
-    /* SHAP Item Styling */
-    .shap-item {
-        background: #1E293B;
-        border: 1px solid #334155;
-        padding: 10px 16px;
-        border-radius: 8px;
-        margin-bottom: 8px;
-        font-size: 0.95rem;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Input Schema Validation matching the 13 model features
+class CustomerData(BaseModel):
+    credit_score: int = Field(..., example=600)
+    age: int = Field(..., example=40)
+    tenure: int = Field(..., example=3)
+    balance: float = Field(..., example=60000.0)
+    products_number: int = Field(..., example=2)
+    credit_card: int = Field(..., example=1)
+    active_member: int = Field(..., example=1)
+    estimated_salary: float = Field(..., example=50000.0)
+    country_France: int = Field(..., example=1)
+    country_Germany: int = Field(..., example=0)
+    country_Spain: int = Field(..., example=0)
+    gender_Female: int = Field(..., example=0)
+    gender_Male: int = Field(..., example=1)
 
-MODEL_PATH = "customer_churn_xgboost_pipeline.pkl"
 
-# -----------------------------------------------------------------------------
-# 2. Model & SHAP Explainer Loader
-# -----------------------------------------------------------------------------
-@st.cache_resource
-def load_churn_model(path: str):
-    if not os.path.exists(path):
-        st.error(f"Model file (`{path}`) not found. Ensure the pipeline file is saved in the working directory.")
-        st.stop()
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "healthy", "model_loaded": model is not None}), 200
+
+
+@app.route("/predict", methods=["POST"])
+def predict():
+    if model is None:
+        return jsonify({"error": "Model not loaded"}), 500
+
+    json_data = request.get_json(silent=True)
+    if not json_data:
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
     try:
-        with open(path, "rb") as f:
-            return pickle.load(f)
-    except Exception as e:
-        st.error(f"Failed to load the model pipeline: {str(e)}")
-        st.stop()
+        # Validate JSON payload against expected fields
+        validated_data = CustomerData(**json_data)
+    except ValidationError as err:
+        return jsonify({"error": "Validation error", "details": err.errors()}), 422
 
-model_pipeline = load_churn_model(MODEL_PATH)
+    # Map inputs to the exact feature order expected by the model
+    features = [
+        validated_data.credit_score,
+        validated_data.age,
+        validated_data.tenure,
+        validated_data.balance,
+        validated_data.products_number,
+        validated_data.credit_card,
+        validated_data.active_member,
+        validated_data.estimated_salary,
+        validated_data.country_France,
+        validated_data.country_Germany,
+        validated_data.country_Spain,
+        validated_data.gender_Female,
+        validated_data.gender_Male,
+    ]
 
-# Extract classifier and preprocessor if pipeline exists, else use model directly
-if hasattr(model_pipeline, 'named_steps'):
-    preprocessor = model_pipeline.named_steps.get('preprocessor', None)
-    classifier = model_pipeline.named_steps.get('classifier', model_pipeline)
-else:
-    preprocessor = None
-    classifier = model_pipeline
+    input_array = np.array([features])
 
-@st.cache_resource
-def get_shap_explainer(_clf):
-    return shap.TreeExplainer(_clf)
+    # Run inference
+    probability = float(model.predict_proba(input_array)[0][1])
+    prediction = int(model.predict(input_array)[0])
 
-try:
-    explainer = get_shap_explainer(classifier)
-except Exception:
-    explainer = None
-
-# -----------------------------------------------------------------------------
-# 3. Sidebar Profile Controls
-# -----------------------------------------------------------------------------
-st.sidebar.header("📋 Customer Profile Settings")
-
-with st.sidebar:
-    st.subheader("Demographics")
-    country = st.selectbox("Geography / Country", ["France", "Germany", "Spain"])
-    gender = st.selectbox("Gender", ["Female", "Male"])
-    age = st.slider("Age", 18, 100, 38)
-    
-    st.subheader("Financial & Engagement")
-    credit_score = st.slider("Credit Score", 300, 850, 650)
-    tenure = st.slider("Tenure (Years)", 0, 10, 5)
-    balance = st.number_input("Account Balance ($)", min_value=0.0, value=50000.0, step=1000.0)
-    products_number = st.selectbox("Number of Products", [1, 2, 3, 4], index=0)
-    credit_card = st.radio("Has Credit Card?", ["Yes", "No"], horizontal=True)
-    active_member = st.radio("Is Active Member?", ["Yes", "No"], horizontal=True)
-    estimated_salary = st.number_input("Estimated Salary ($)", min_value=0.0, value=75000.0, step=1000.0)
-
-# Exact DataFrame construct matching training schema
-input_df = pd.DataFrame([{
-    "credit_score": credit_score,
-    "country": country,
-    "gender": gender,
-    "age": age,
-    "tenure": tenure,
-    "balance": balance,
-    "products_number": products_number,
-    "credit_card": 1 if credit_card == "Yes" else 0,
-    "active_member": 1 if active_member == "Yes" else 0,
-    "estimated_salary": estimated_salary
-}])
-
-# -----------------------------------------------------------------------------
-# 4. Prediction Execution
-# -----------------------------------------------------------------------------
-try:
-    probabilities = model_pipeline.predict_proba(input_df)[0]
-    stay_prob = probabilities[0]
-    churn_prob = probabilities[1]
-    prediction = int(churn_prob >= 0.5)
-except Exception as err:
-    st.error(f"Error executing prediction pipeline: {err}")
-    st.stop()
-
-# Explicit Business Rule Risk Classification (Documented in README)
-if churn_prob < 0.30:
-    risk_level = "LOW"
-    risk_class = "risk-low"
-elif churn_prob < 0.60:
-    risk_level = "MEDIUM"
-    risk_class = "risk-med"
-else:
-    risk_level = "HIGH"
-    risk_class = "risk-high"
-
-# -----------------------------------------------------------------------------
-# 5. Header & Top Metrics
-# -----------------------------------------------------------------------------
-st.title("🔮 Customer Churn Intelligence Dashboard")
-st.caption("Predict customer churn risk using an end-to-end XGBoost ML pipeline.")
-
-mcol1, mcol2, mcol3 = st.columns(3)
-with mcol1:
-    st.markdown("""
-    <div class="metric-card">
-        <span style="color:#94A3B8; font-size:0.85rem;">MODEL ENGINE</span>
-        <h3 style="margin:4px 0 0 0;">XGBoost Classifier</h3>
-    </div>
-    """, unsafe_allow_html=True)
-
-with mcol2:
-    st.markdown("""
-    <div class="metric-card">
-        <span style="color:#94A3B8; font-size:0.85rem;">MODEL PERFORMANCE</span>
-        <h3 style="margin:4px 0 0 0; color:#38BDF8;">ROC-AUC: 86.41%</h3>
-    </div>
-    """, unsafe_allow_html=True)
-
-with mcol3:
-    st.markdown("""
-    <div class="metric-card">
-        <span style="color:#94A3B8; font-size:0.85rem;">DECISION THRESHOLD</span>
-        <h3 style="margin:4px 0 0 0;">50.0%</h3>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-# -----------------------------------------------------------------------------
-# 6. Main Analytics: Overview & Probability Gauge
-# -----------------------------------------------------------------------------
-col1, col2 = st.columns([1, 1], gap="medium")
-
-with col1:
-    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.subheader("Prediction Overview")
-    
-    if prediction == 1:
-        st.markdown('<div class="status-badge-churn">⚠️ Likely to Churn</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="status-badge-stay">✅ Customer Likely to Stay</div>', unsafe_allow_html=True)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    res_col1, res_col2, res_col3 = st.columns(3)
-    res_col1.metric("Retention Probability", f"{stay_prob * 100:.1f}%")
-    res_col2.metric("Churn Probability", f"{churn_prob * 100:.1f}%")
-    
-    with res_col3:
-        st.markdown("**Risk Level**")
-        st.markdown(f'<span class="{risk_class}" style="font-size:1.4rem;">{risk_level}</span>', unsafe_allow_html=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col2:
-    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.subheader("Probability Distribution")
-    
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=churn_prob * 100,
-        number={'suffix': "%", 'font': {'size': 32, 'color': '#F8FAFC'}},
-        gauge={
-            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#94A3B8"},
-            'bar': {'color': "#EF4444" if churn_prob >= 0.5 else "#22C55E"},
-            'bgcolor': "#0F172A",
-            'borderwidth': 0,
-            'steps': [
-                {'range': [0, 30], 'color': 'rgba(34, 197, 94, 0.2)'},
-                {'range': [30, 60], 'color': 'rgba(234, 179, 8, 0.2)'},
-                {'range': [60, 100], 'color': 'rgba(239, 68, 68, 0.2)'}
-            ],
-            'threshold': {
-                'line': {'color': "#F8FAFC", 'width': 3},
-                'thickness': 0.75,
-                'value': 50
+    return (
+        jsonify(
+            {
+                "prediction": prediction,
+                "probability": round(probability, 4),
             }
-        }
-    ))
-    
-    fig.update_layout(
-        height=180,
-        margin=dict(l=20, r=20, t=10, b=10),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)'
+        ),
+        200,
     )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
-# 7. Model Feature Profile
-# -----------------------------------------------------------------------------
-st.subheader("🔍 Customer Feature Profile")
-st.dataframe(
-    input_df.style.format({
-        "balance": "${:,.2f}",
-        "estimated_salary": "${:,.2f}",
-        "credit_score": "{:d}",
-        "age": "{:d}",
-        "tenure": "{:d}",
-        "products_number": "{:d}",
-        "credit_card": lambda x: "Yes" if x == 1 else "No",
-        "active_member": lambda x: "Yes" if x == 1 else "No"
-    }),
-    use_container_width=True
-)
 
-# -----------------------------------------------------------------------------
-# 8. SHAP Model Explainability
-# -----------------------------------------------------------------------------
-st.subheader("🔎 Why the Model Made This Prediction")
-
-if explainer is not None:
-    try:
-        # Preprocess features if transformer exists in pipeline
-        if preprocessor:
-            transformed_input = preprocessor.transform(input_df)
-            if hasattr(preprocessor, 'get_feature_names_out'):
-                feature_names = preprocessor.get_feature_names_out()
-            else:
-                feature_names = [f"feature_{i}" for i in range(transformed_input.shape[1])]
-        else:
-            transformed_input = input_df
-            feature_names = input_df.columns.tolist()
-
-        shap_values = explainer(transformed_input)
-        
-        # Handle SHAP multi-class vs single array outputs
-        if len(shap_values.shape) == 3:
-            vals = shap_values.values[0, :, 1]
-        else:
-            vals = shap_values.values[0]
-
-        # Pair features with SHAP contributions
-        feature_shap = list(zip(feature_names, vals))
-        feature_shap.sort(key=lambda x: abs(x[1]), reverse=True)
-
-        for feature, val in feature_shap[:5]:
-            clean_name = feature.replace("remainder__", "").replace("cat__", "").replace("_", " ").title()
-            if val > 0:
-                st.markdown(f'<div class="shap-item">🔴 <b>{clean_name}</b> → Increases churn risk (SHAP value: +{val:.3f})</div>', unsafe_allow_html=True)
-            else:
-                st.markdown(f'<div class="shap-item">🟢 <b>{clean_name}</b> → Lowers churn risk (SHAP value: {val:.3f})</div>', unsafe_allow_html=True)
-
-    except Exception as e:
-        st.info("SHAP explainability computation fallback active. Model prediction remains accurate.")
-else:
-    st.info("SHAP Explainer initialized in standard fallback mode.")
-
-st.caption("Prediction generated from current customer profile • Risk thresholds: 0–30% Low, 30–60% Medium, 60–100% High")
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
