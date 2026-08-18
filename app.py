@@ -93,17 +93,31 @@ col1, col2 = st.columns([1, 1])
 with col1:
     st.subheader("👤 Selected Attributes")
     
-    # Display summary table of input data
+    # Create DataFrame with string-formatted values
     display_df = pd.DataFrame({
         "Attribute": ["Country", "Gender", "Age", "Credit Score", "Tenure", "Balance", "Products", "Credit Card", "Active Member", "Salary"],
-        "Value": [country, gender, f"{age} yrs", credit_score, f"{tenure} yrs", f"${balance:,.2f}", products_number, credit_card, active_member, f"${estimated_salary:,.2f}"]
+        "Value": [
+            str(country), 
+            str(gender), 
+            f"{age} yrs", 
+            str(credit_score), 
+            f"{tenure} yrs", 
+            f"${balance:,.2f}", 
+            str(products_number), 
+            str(credit_card), 
+            str(active_member), 
+            f"${estimated_salary:,.2f}"
+        ]
     })
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    
+    # Render table with updated 'width' syntax
+    st.dataframe(display_df, width="stretch", hide_index=True)
 
 with col2:
     st.subheader("🎯 Risk Assessment")
     
-    predict_btn = st.button("Predict Churn Risk", type="primary", use_container_width=True)
+    # Updated button parameter
+    predict_btn = st.button("Predict Churn Risk", type="primary", width="stretch")
     
     if predict_btn and pipeline is not None:
         try:
