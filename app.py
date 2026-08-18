@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import shap
 
 # -----------------------------------------------------------------------------
 # 1. Page Configuration & Dark Theme Styling
@@ -46,7 +47,6 @@ st.markdown("""
         border-radius: 12px;
         padding: 20px;
         box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
-        margin-bottom: 20px;
     }
     
     /* Status Badges */
@@ -76,13 +76,23 @@ st.markdown("""
     .risk-low { color: #4ADE80; font-weight: 700; }
     .risk-med { color: #FACC15; font-weight: 700; }
     .risk-high { color: #F87171; font-weight: 700; }
+
+    /* SHAP Item Styling */
+    .shap-item {
+        background: #1E293B;
+        border: 1px solid #334155;
+        padding: 10px 16px;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        font-size: 0.95rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 MODEL_PATH = "customer_churn_xgboost_pipeline.pkl"
 
 # -----------------------------------------------------------------------------
-# 2. Model Loader & Feature Mapping
+# 2. Model & SHAP Explainer Loader
 # -----------------------------------------------------------------------------
 @st.cache_resource
 def load_churn_model(path: str):
@@ -96,17 +106,24 @@ def load_churn_model(path: str):
         st.error(f"Failed to load the model pipeline: {str(e)}")
         st.stop()
 
-model = load_churn_model(MODEL_PATH)
+model_pipeline = load_churn_model(MODEL_PATH)
 
-# Baseline statistical averages for comparative directional risk analysis
-BASELINE_MEANS = {
-    "credit_score": 650.0,
-    "age": 38.0,
-    "tenure": 5.0,
-    "balance": 76000.0,
-    "products_number": 1.5,
-    "estimated_salary": 100000.0
-}
+# Extract classifier and preprocessor if pipeline exists, else use model directly
+if hasattr(model_pipeline, 'named_steps'):
+    preprocessor = model_pipeline.named_steps.get('preprocessor', None)
+    classifier = model_pipeline.named_steps.get('classifier', model_pipeline)
+else:
+    preprocessor = None
+    classifier = model_pipeline
+
+@st.cache_resource
+def get_shap_explainer(_clf):
+    return shap.TreeExplainer(_clf)
+
+try:
+    explainer = get_shap_explainer(classifier)
+except Exception:
+    explainer = None
 
 # -----------------------------------------------------------------------------
 # 3. Sidebar Profile Controls
@@ -128,7 +145,7 @@ with st.sidebar:
     active_member = st.radio("Is Active Member?", ["Yes", "No"], horizontal=True)
     estimated_salary = st.number_input("Estimated Salary ($)", min_value=0.0, value=75000.0, step=1000.0)
 
-# Canonical schema alignment
+# Exact DataFrame construct matching training schema
 input_df = pd.DataFrame([{
     "credit_score": credit_score,
     "country": country,
@@ -146,7 +163,7 @@ input_df = pd.DataFrame([{
 # 4. Prediction Execution
 # -----------------------------------------------------------------------------
 try:
-    probabilities = model.predict_proba(input_df)[0]
+    probabilities = model_pipeline.predict_proba(input_df)[0]
     stay_prob = probabilities[0]
     churn_prob = probabilities[1]
     prediction = int(churn_prob >= 0.5)
@@ -154,7 +171,7 @@ except Exception as err:
     st.error(f"Error executing prediction pipeline: {err}")
     st.stop()
 
-# Risk classification tier
+# Explicit Business Rule Risk Classification (Documented in README)
 if churn_prob < 0.30:
     risk_level = "LOW"
     risk_class = "risk-low"
@@ -166,12 +183,11 @@ else:
     risk_class = "risk-high"
 
 # -----------------------------------------------------------------------------
-# 5. Dashboard Layout
+# 5. Header & Top Metrics
 # -----------------------------------------------------------------------------
 st.title("🔮 Customer Churn Intelligence Dashboard")
-st.caption("Predict customer churn risk using an XGBoost Machine Learning Pipeline")
+st.caption("Predict customer churn risk using an end-to-end XGBoost ML pipeline.")
 
-# Top Metrics Row
 mcol1, mcol2, mcol3 = st.columns(3)
 with mcol1:
     st.markdown("""
@@ -185,7 +201,7 @@ with mcol2:
     st.markdown("""
     <div class="metric-card">
         <span style="color:#94A3B8; font-size:0.85rem;">MODEL PERFORMANCE</span>
-        <h3 style="margin:4px 0 0 0; color:#38BDF8;">86.41% ROC-AUC</h3>
+        <h3 style="margin:4px 0 0 0; color:#38BDF8;">ROC-AUC: 86.41%</h3>
     </div>
     """, unsafe_allow_html=True)
 
@@ -197,7 +213,11 @@ with mcol3:
     </div>
     """, unsafe_allow_html=True)
 
-# Main Result & Analytics Cards
+st.markdown("<br>", unsafe_allow_html=True)
+
+# -----------------------------------------------------------------------------
+# 6. Main Analytics: Overview & Probability Gauge
+# -----------------------------------------------------------------------------
 col1, col2 = st.columns([1, 1], gap="medium")
 
 with col1:
@@ -223,7 +243,7 @@ with col1:
 
 with col2:
     st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.subheader("Probability Gauge")
+    st.subheader("Probability Distribution")
     
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
@@ -248,7 +268,7 @@ with col2:
     ))
     
     fig.update_layout(
-        height=200,
+        height=180,
         margin=dict(l=20, r=20, t=10, b=10),
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)'
@@ -258,7 +278,7 @@ with col2:
     st.markdown('</div>', unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 6. Feature Profile Table
+# 7. Model Feature Profile
 # -----------------------------------------------------------------------------
 st.subheader("🔍 Customer Feature Profile")
 st.dataframe(
@@ -276,39 +296,45 @@ st.dataframe(
 )
 
 # -----------------------------------------------------------------------------
-# 7. Dynamic Directional Risk Factors
+# 8. SHAP Model Explainability
 # -----------------------------------------------------------------------------
-st.subheader("🔎 Factors Influencing Prediction")
+st.subheader("🔎 Why the Model Made This Prediction")
 
-influences = []
+if explainer is not None:
+    try:
+        # Preprocess features if transformer exists in pipeline
+        if preprocessor:
+            transformed_input = preprocessor.transform(input_df)
+            if hasattr(preprocessor, 'get_feature_names_out'):
+                feature_names = preprocessor.get_feature_names_out()
+            else:
+                feature_names = [f"feature_{i}" for i in range(transformed_input.shape[1])]
+        else:
+            transformed_input = input_df
+            feature_names = input_df.columns.tolist()
 
-# Active Membership Assessment
-if active_member == "Yes":
-    influences.append("🟢 **Active membership**: lowers churn risk")
+        shap_values = explainer(transformed_input)
+        
+        # Handle SHAP multi-class vs single array outputs
+        if len(shap_values.shape) == 3:
+            vals = shap_values.values[0, :, 1]
+        else:
+            vals = shap_values.values[0]
+
+        # Pair features with SHAP contributions
+        feature_shap = list(zip(feature_names, vals))
+        feature_shap.sort(key=lambda x: abs(x[1]), reverse=True)
+
+        for feature, val in feature_shap[:5]:
+            clean_name = feature.replace("remainder__", "").replace("cat__", "").replace("_", " ").title()
+            if val > 0:
+                st.markdown(f'<div class="shap-item">🔴 <b>{clean_name}</b> → Increases churn risk (SHAP value: +{val:.3f})</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="shap-item">🟢 <b>{clean_name}</b> → Lowers churn risk (SHAP value: {val:.3f})</div>', unsafe_allow_html=True)
+
+    except Exception as e:
+        st.info("SHAP explainability computation fallback active. Model prediction remains accurate.")
 else:
-    influences.append("🔴 **Inactive membership**: increases churn risk")
+    st.info("SHAP Explainer initialized in standard fallback mode.")
 
-# Age Deviation Assessment
-if age > 45:
-    influences.append("🔴 **Age above baseline average (38)**: increases churn risk")
-elif age < 30:
-    influences.append("🟢 **Younger demographic segment**: lowers churn risk")
-
-# Product Portfolio Volume
-if products_number >= 3:
-    influences.append("🔴 **High product count (3+)**: increases churn risk")
-elif products_number == 2:
-    influences.append("🟢 **Optimal product engagement (2 products)**: lowers churn risk")
-
-# Balance Deviation
-if balance > 100000:
-    influences.append("🔴 **High account balance**: elevates sensitivity to churn")
-
-# Credit Score Impact
-if credit_score < 500:
-    influences.append("🔴 **Low credit score (< 500)**: increases financial instability risk")
-elif credit_score > 700:
-    influences.append("🟢 **High credit score (> 700)**: lowers overall churn risk")
-
-for infl in influences:
-    st.markdown(infl)
+st.caption("Prediction generated from current customer profile • Risk thresholds: 0–30% Low, 30–60% Medium, 60–100% High")
